@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Block pushing the payload. Working-tree scan here + the repo's own range-based
+# check via _chain (some teams have a scripts/hooks/pre-push that scans exactly
+# the commits being pushed). A stale poisoned tracking ref must not block a push.
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$DIR/scan-repo.sh" --worktree --block || exit 1
+. "$DIR/_chain.sh"; _chain pre-push "$@"

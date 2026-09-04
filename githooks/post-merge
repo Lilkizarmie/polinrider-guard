@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# After a merge / `git pull` (incl. fast-forward): if the payload just landed in
+# the working tree, roll the whole thing back to the pre-pull state.
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if ! "$DIR/scan-repo.sh" --worktree --block; then
+  gd="$(git rev-parse --git-dir 2>/dev/null)"
+  {
+    echo
+    echo "  ┏━ malware-guard: that pull/merge brought in the RAT-stager payload."
+    if git rev-parse -q --verify ORIG_HEAD >/dev/null 2>&1; then
+      git merge --abort 2>/dev/null
+      if git reset --hard ORIG_HEAD >/dev/null 2>&1; then
+        echo "  ┃  rolled the working tree back to $(git rev-parse --short ORIG_HEAD) (before the pull)."
+      else
+        echo "  ┃  could NOT auto-roll-back — run:  git reset --hard ORIG_HEAD"
+      fi
+    else
+      echo "  ┃  no ORIG_HEAD to roll back to — reset to a known-good commit by hand."
+    fi
+    [ -n "$gd" ] && date > "$gd/MALWARE-DETECTED"
+    echo "  ┃  do NOT build, lint, npm-install, or open this repo in an editor."
+    echo "  ┗━ the REMOTE branch is compromised — don't re-pull until it's cleaned."
+    echo
+  } >&2
+  exit 1
+fi
+
+. "$DIR/_chain.sh"; _chain post-merge "$@"

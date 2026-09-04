@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Block committing the payload. Scans the working tree only — a stale poisoned
+# remote-tracking ref must not stop you committing clean work.
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$DIR/scan-repo.sh" --worktree --block || exit 1
+. "$DIR/_chain.sh"; _chain pre-commit "$@"

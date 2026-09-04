@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# After `git checkout` / clone: if the payload is in the working tree, shout
+# loudly and drop a sentinel. We do NOT modify the working tree here — a false
+# positive must never destroy a file. (post-merge still auto-reverts a pull,
+# which is safe because ORIG_HEAD makes it reversible.)
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if ! "$DIR/scan-repo.sh" --worktree --block; then
+  gd="$(git rev-parse --git-dir 2>/dev/null)"
+  {
+    echo
+    echo "  ┏━ malware-guard: this checkout contains the RAT-stager payload (see above)."
+    [ -n "$gd" ] && date > "$gd/MALWARE-DETECTED"
+    echo "  ┃  do NOT build, lint, npm-install, or open this in an editor with extensions."
+    echo "  ┗━ switch back to a known-good commit / branch, or purge the payload first."
+    echo
+  } >&2
+  exit 1
+fi
+
+. "$DIR/_chain.sh"; _chain post-checkout "$@"
