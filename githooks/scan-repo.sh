@@ -84,14 +84,22 @@ while IFS= read -r f; do
 done < <(git ls-files -- '*.config.js' '*.config.mjs' '*.config.cjs' '*.config.ts' \
                           'eslint.config.*' 'postcss.config.*' 'tailwind.config.*' 'vite.config.*' 2>/dev/null)
 
-# 4 — a "font" that is actually text/JS (wrong magic bytes)
+# 4 — a "font" file that is actually a script. Not a magic-byte check: .eot has
+# no magic (first 4 bytes are the file size), so that FPs on real .eot fonts.
+# Instead: does the head of the file read as JS/text carrying the payload?
 while IFS= read -r f; do
   [ -f "$f" ] || continue
-  m=$(head -c4 "$f" 2>/dev/null | od -An -tx1 2>/dev/null | tr -d ' \n')
-  case "$m" in
-    774f4632|774f4646|4f54544f|0001000*|74727565|74746366) ;;   # wOF2 wOFF OTTO ttf true ttcf
-    *) hits+="  fake font:         $f (first bytes ${m:-empty})"$'\n' ;;
-  esac
+  fhead=$(head -c 4096 "$f" 2>/dev/null)
+  if printf '%s' "$fhead" | LC_ALL=C grep -qE "$SIGS"; then
+    hits+="  fake font (payload):  $f"$'\n'; continue
+  fi
+  printable=$(printf '%s' "$fhead" | LC_ALL=C tr -cd '[:print:][:space:]' | wc -c | tr -d ' ')
+  total=$(printf '%s' "$fhead" | wc -c | tr -d ' ')
+  [ "${total:-0}" -gt 0 ] || continue
+  if [ $((printable * 100 / total)) -ge 90 ] \
+     && printf '%s' "$fhead" | grep -qE 'function|=>|require\(|eval\(|module\.exports|_0x[0-9a-f]{4}|String\.fromCharCode'; then
+    hits+="  fake font (file is JavaScript, not a font):  $f"$'\n'
+  fi
 done < <(git ls-files -- '*.woff2' '*.woff' '*.ttf' '*.otf' '*.eot' 2>/dev/null)
 
 # 5 — hidden editor auto-run

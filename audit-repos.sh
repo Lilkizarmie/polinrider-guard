@@ -65,15 +65,23 @@ scan_blob() {
   b64=$(gh api "repos/$or/git/blobs/$sha" --jq '.content' 2>/dev/null) || return 1
   [ -z "$b64" ] && return 1
 
-  # font/otf/ttf/etc: check magic bytes instead of grepping (they're binary)
+  # font files: the threat is a "font" that is actually a script. Don't rely on
+  # magic bytes (.eot has none — its first 4 bytes are the file size), check
+  # whether the head of the file reads as JS/text carrying the payload.
   case "$path" in
     *.woff2|*.woff|*.ttf|*.otf|*.eot)
-      local magic
-      magic=$(printf '%s' "$b64" | tr -d '\n' | base64 -d 2>/dev/null | head -c4 | od -An -tx1 | tr -d ' \n')
-      case "$magic" in
-        774f4632|774f4646|4f54544f|00010000|74727565|74746366) return 1 ;;  # legit font
-        *) echo "    fake font (wrong magic bytes ${magic:-empty}): $path"; return 0 ;;
-      esac
+      local fhead printable total
+      fhead=$(printf '%s' "$b64" | tr -d '\n' | base64 -d 2>/dev/null | head -c 4096)
+      if printf '%s' "$fhead" | grep -qE "$SIGS"; then
+        echo "    fake font (payload signature in a .font file): $path"; return 0
+      fi
+      printable=$(printf '%s' "$fhead" | LC_ALL=C tr -cd '[:print:][:space:]' | wc -c | tr -d ' ')
+      total=$(printf '%s' "$fhead" | wc -c | tr -d ' ')
+      if [ "${total:-0}" -gt 0 ] && [ $((printable * 100 / total)) -ge 90 ] \
+         && printf '%s' "$fhead" | grep -qE 'function|=>|require\(|eval\(|module\.exports|_0x[0-9a-f]{4}|String\.fromCharCode'; then
+        echo "    fake font (file is JavaScript, not a font): $path"; return 0
+      fi
+      return 1
       ;;
     .vscode/tasks.json)
       if printf '%s' "$b64" | tr -d '\n' | base64 -d 2>/dev/null | grep -qE 'folderOpen|allowAutomaticTasks"?[[:space:]]*:[[:space:]]*true'; then
@@ -153,12 +161,18 @@ scan_repo() {
   echo
 }
 
+# bash 3.2 (stock macOS) has no `mapfile` — read into the array by hand.
+_read_repos() {   # $1 = gh api path
+  REPOS=()
+  while IFS= read -r _r; do
+    [ -n "$_r" ] && REPOS+=("$_r")
+  done < <(gh api "$1" --paginate --jq '.[].name' 2>/dev/null)
+}
+
 if [ "${#REPOS[@]}" -eq 0 ]; then
   echo "No repo list given — fetching every repo for '$OWNER'..."
-  mapfile -t REPOS < <(gh api "orgs/$OWNER/repos" --paginate --jq '.[].name' 2>/dev/null)
-  if [ "${#REPOS[@]}" -eq 0 ]; then
-    mapfile -t REPOS < <(gh api "users/$OWNER/repos" --paginate --jq '.[].name' 2>/dev/null)
-  fi
+  _read_repos "orgs/$OWNER/repos"
+  [ "${#REPOS[@]}" -eq 0 ] && _read_repos "users/$OWNER/repos"
   if [ "${#REPOS[@]}" -eq 0 ]; then
     echo "error: couldn't list repos for '$OWNER' (bad name, or no access)." >&2
     exit 1
