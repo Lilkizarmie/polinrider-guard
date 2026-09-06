@@ -76,6 +76,7 @@ contributor adds.
 | Kill stage-2 on sight | `malware-guard.sh` + LaunchAgent | the detached `node -e` that does the damage | no | just a process monitor — kills nothing but the confirmed payload |
 | Catch it in git, locally | `githooks/` (global `core.hooksPath`) | a poisoned commit arriving via fetch/pull/clone, or leaving via commit/push | no | warn-only on pull/checkout; blocks (not deletes) on commit/push |
 | Audit repos remotely | `audit-repos.sh` | nothing — it only reports | no | 100% read-only, no git object ever touched |
+| Sweep local clones | `scan-worm.sh` | nothing — it only reports | no | read-only; walks a directory tree of clones, checks IOC filenames, `.gitignore` litter, padded payloads, `.vscode` auto-run, hook loaders, `postinstall` loaders, `url.insteadOf` rewrites |
 | Clean up what's found | `PURGE-PLAYBOOK.md` + `purge-callbacks/` | — | sometimes | **you run every step yourself**, on a target commit you choose |
 
 ## Quick start
@@ -93,6 +94,12 @@ To check remote repos you have access to, without cloning anything:
 ```bash
 bash audit-repos.sh <org-or-username>              # every repo gh can see for them
 bash audit-repos.sh <org-or-username> repo1 repo2   # just these repos
+```
+
+To sweep every local clone under a folder at once:
+
+```bash
+bash scan-worm.sh ~/code        # or wherever your repos live
 ```
 
 (needs the [`gh` CLI](https://cli.github.com/), already logged in:
@@ -174,6 +181,7 @@ edit a hook yourself: `chflags nouchg githooks/*`, edit, then rerun
 install.sh                          process monitor installer (LaunchAgent)
 install-githooks.sh                 global git hooks installer + one-time scan
 audit-repos.sh                      read-only remote scan via the GitHub API
+scan-worm.sh                        read-only local sweep of a whole tree of clones (contributed)
 block-c2-hosts.sh                   null-routes the C2-resolution hosts (needs sudo)
 malware-guard.sh                    the process monitor itself
 com.polinrider-guard.monitor.plist  LaunchAgent definition (templated by install.sh)
